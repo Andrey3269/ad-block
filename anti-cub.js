@@ -1,3 +1,10 @@
+/**
+ * name: Anti-CUB
+ * description: Блокировка окна CUB Premium
+ * version: 1.0.0
+ * author: chan
+ */
+
 (function () {
     'use strict';
 
