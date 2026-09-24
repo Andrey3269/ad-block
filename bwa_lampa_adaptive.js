@@ -325,7 +325,7 @@ window.rch_nws[hostkey].Registry = function RchRegistry(client, startConnection)
     var filter_sources = {};
     var current_videos = [];
     var auto_source_key = '__auto__';
-    var auto_max_sources = 10;
+    var auto_max_sources = 8;
     var filter_translate = {
       season: Lampa.Lang.translate('torrent_serial_season'),
       voice: Lampa.Lang.translate('torrent_parser_voice'),
@@ -334,205 +334,6 @@ window.rch_nws[hostkey].Registry = function RchRegistry(client, startConnection)
     var filter_find = {
       season: [],
       voice: []
-    };
-    var bwa_toolbar = null;
-    var bwa_voice_filter = '';
-    var bwa_all_videos = [];
-
-    function bwaUnique(list) {
-      var out = [];
-      var seen = {};
-      (list || []).forEach(function(value) {
-        value = String(value || '').trim();
-        if (!value || seen[value.toLowerCase()]) return;
-        seen[value.toLowerCase()] = true;
-        out.push(value);
-      });
-      return out;
-    }
-
-    function bwaQualityStats(items) {
-      var counts = {};
-      (items || []).forEach(function(item) {
-        var map = normalizedQualityMap(item.qualitys || item.quality || {});
-        Object.keys(map).forEach(function(q) {
-          counts[q] = (counts[q] || 0) + 1;
-        });
-      });
-      return counts;
-    }
-
-    this.updateBwaToolbar = function(status) {
-      if (!bwa_toolbar || !bwa_toolbar.length) return;
-      var currentList = this.current_videos || [];
-      var all = bwa_all_videos.length || currentList.length || 0;
-      var visible = currentList.length || 0;
-      var allItems = bwa_all_videos.length ? bwa_all_videos : currentList;
-      var voices = bwaUnique(allItems.map(function(item) {
-        return item.voice_name || item.text;
-      }));
-      var sourceCount = filter_sources.filter(function(key) {
-        return key !== auto_source_key && sources[key] && sources[key].show;
-      }).length;
-      var counts = bwaQualityStats(allItems);
-      var preferred = getPreferredQuality();
-      var qCount = preferred ? (counts[preferred] || 0) : 0;
-      var sourceText = balanser === auto_source_key ? 'Все источники' : (sources[balanser] ? sources[balanser].name : 'Источник');
-      var voiceText = bwa_voice_filter || (voices.length === 1 ? voices[0] : (voices.length ? 'Озвучка · ' + voices.length : 'Озвучка'));
-      var statusText = status || (all ? ('Найдено: ' + visible + (visible !== all ? ' / ' + all : '')) : 'Готово к поиску');
-      bwa_toolbar.find('.bwa-ui__source-label').text(sourceText);
-      bwa_toolbar.find('.bwa-ui__quality-label').text(qualityText(preferred) + (qCount ? ' · ' + qCount : ''));
-      bwa_toolbar.find('.bwa-ui__voice-label').text(voiceText);
-      bwa_toolbar.find('.bwa-ui__status').text(statusText);
-      bwa_toolbar.find('.bwa-ui__count').text(voices.length ? (voices.length + ' озв.') : (sourceCount ? (sourceCount + ' источн.') : ''));
-      var resetVoice = bwa_toolbar.find('.bwa-ui__reset-voice');
-      if (bwa_voice_filter) resetVoice.removeClass('hide').text('Сброс фильтра');
-      else resetVoice.addClass('hide');
-    };
-
-    this.createBwaToolbar = function() {
-      var _thisToolbar = this;
-      var body = scroll.body();
-      body.find('.bwa-ui').remove();
-      var serial = !!object.movie.name;
-      var title = object.movie.title || object.movie.original_title || object.movie.name || 'Онлайн';
-      var toolbar = $('<div class="bwa-ui">' +
-        '<div class="bwa-ui__top">' +
-          '<div class="bwa-ui__identity">' +
-            '<div class="bwa-ui__logo"><span>▶</span></div>' +
-            '<div class="bwa-ui__titles"><div class="bwa-ui__title"></div><div class="bwa-ui__status"></div></div>' +
-          '</div>' +
-          '<div class="bwa-ui__count"></div>' +
-        '</div>' +
-        '<div class="bwa-ui__controls">' +
-          '<div class="bwa-ui__button selector bwa-ui__source"><span class="bwa-ui__icon">◉</span><span class="bwa-ui__label">Источник</span><strong class="bwa-ui__source-label"></strong></div>' +
-          '<div class="bwa-ui__button selector bwa-ui__voice"><span class="bwa-ui__icon">♫</span><span class="bwa-ui__label">Озвучка</span><strong class="bwa-ui__voice-label"></strong></div>' +
-          '<div class="bwa-ui__button selector bwa-ui__quality"><span class="bwa-ui__icon">HD</span><span class="bwa-ui__label">Качество</span><strong class="bwa-ui__quality-label"></strong></div>' +
-          '<div class="bwa-ui__button selector bwa-ui__reset-voice hide">Сброс фильтра</div>' +
-        '</div>' +
-        '<div class="bwa-ui__hint">' + (serial ? 'Выберите озвучку и серию — OK для просмотра' : 'Выберите вариант — OK для просмотра') + '</div>' +
-      '</div>');
-      toolbar.find('.bwa-ui__title').text(title);
-      body.prepend(toolbar);
-      bwa_toolbar = toolbar;
-
-      toolbar.find('.bwa-ui__quality').on('hover:enter', function() {
-        _thisToolbar.openBwaQuality();
-      });
-      toolbar.find('.bwa-ui__voice').on('hover:enter', function() {
-        _thisToolbar.openBwaVoice();
-      });
-      toolbar.find('.bwa-ui__source').on('hover:enter', function() {
-        _thisToolbar.openBwaSource();
-      });
-      toolbar.find('.bwa-ui__reset-voice').on('hover:enter', function() {
-        bwa_voice_filter = '';
-        _thisToolbar.display(bwa_all_videos.length ? bwa_all_videos : _thisToolbar.current_videos);
-      });
-
-      this.updateBwaToolbar();
-    };
-
-    this.openBwaQuality = function() {
-      var _this = this;
-      var enabled = Lampa.Controller.enabled().name;
-      var all = bwa_all_videos.length ? bwa_all_videos : this.current_videos;
-      var counts = bwaQualityStats(all);
-      var items = [{ title: 'Авто — лучшее доступное', quality: 0, selected: getPreferredQuality() === 0 }];
-      BWA_QUALITY_LIST.forEach(function(q) {
-        var count = counts[q] || 0;
-        items.push({
-          title: q + 'p' + (count ? '  ·  ' + count + ' вариантов' : ''),
-          quality: q,
-          selected: getPreferredQuality() === q
-        });
-      });
-      Lampa.Select.show({
-        title: 'Качество по умолчанию',
-        items: items,
-        onBack: function() { Lampa.Controller.toggle(enabled); },
-        onSelect: function(item) {
-          setPreferredQuality(item.quality);
-          Lampa.Controller.toggle(enabled);
-          _this.display(all);
-          Lampa.Noty.show('Качество: ' + qualityText(item.quality));
-        }
-      });
-    };
-
-    this.openBwaVoice = function() {
-      var _this = this;
-      var enabled = Lampa.Controller.enabled().name;
-      var all = bwa_all_videos.length ? bwa_all_videos : this.current_videos;
-      var names = bwaUnique(all.map(function(item) {
-        return item.voice_name || item.text;
-      }));
-      if (balanser !== auto_source_key && filter_find.voice.length) {
-        names = bwaUnique(filter_find.voice.map(function(item) { return item.title; }));
-      }
-      if (!names.length) {
-        Lampa.Noty.show('Озвучки пока не найдены');
-        return;
-      }
-      var items = [{ title: 'Все озвучки', value: '' }].concat(names.map(function(name) {
-        return { title: name, value: name, selected: bwa_voice_filter === name };
-      }));
-      Lampa.Select.show({
-        title: 'Озвучка',
-        items: items,
-        onBack: function() { Lampa.Controller.toggle(enabled); },
-        onSelect: function(item) {
-          if (balanser !== auto_source_key && filter_find.voice.length) {
-            var idx = filter_find.voice.findIndex(function(v) { return v.title === item.value; });
-            if (!item.value) {
-              bwa_voice_filter = '';
-              _this.replaceChoice({ voice: 0, voice_url: '', voice_name: '' });
-              Lampa.Controller.toggle(enabled);
-              _this.request(_this.requestParams(source));
-            } else if (idx >= 0) {
-              bwa_voice_filter = item.value;
-              var choice = _this.getChoice();
-              choice.voice_name = item.value;
-              choice.voice_url = filter_find.voice[idx].url;
-              choice.voice = idx;
-              _this.saveChoice(choice);
-              Lampa.Controller.toggle(enabled);
-              _this.reset();
-              _this.request(filter_find.voice[idx].url);
-            } else {
-              Lampa.Controller.toggle(enabled);
-            }
-          } else {
-            bwa_voice_filter = item.value || '';
-            Lampa.Controller.toggle(enabled);
-            _this.display(all);
-          }
-        }
-      });
-    };
-
-    this.openBwaSource = function() {
-      var _this = this;
-      var enabled = Lampa.Controller.enabled().name;
-      var items = filter_sources.filter(function(key) {
-        return key === auto_source_key || (sources[key] && sources[key].show);
-      }).map(function(key) {
-        return {
-          title: key === auto_source_key ? 'Все источники' : sources[key].name,
-          source: key,
-          selected: key === balanser
-        };
-      });
-      if (!items.length) return;
-      Lampa.Select.show({
-        title: 'Источник',
-        items: items,
-        onBack: function() { Lampa.Controller.toggle(enabled); },
-        onSelect: function(item) {
-          Lampa.Controller.toggle(enabled);
-          _this.changeBalanser(item.source);
-        }
-      });
     };
 	
     if (balansers_with_search == undefined) {
@@ -648,7 +449,6 @@ window.rch_nws[hostkey].Registry = function RchRegistry(client, startConnection)
       files.appendHead(filter.render());
       scroll.minus(files.render().find('.explorer__files-head'));
       scroll.body().append(Lampa.Template.get('lampac_content_loading'));
-      this.createBwaToolbar();
       Lampa.Controller.enable('content');
       this.loading(false);
 	  if(object.balanser){
@@ -930,13 +730,9 @@ window.rch_nws[hostkey].Registry = function RchRegistry(client, startConnection)
       var pendingSources = targets.length;
       var collected = [];
       var seen = {};
-      var completedSources = 0;
-      _this.updateBwaToolbar('Ищем сразу по ' + targets.length + ' источникам…');
 
       var finishAll = function() {
         pendingSources--;
-        completedSources++;
-        _this.updateBwaToolbar('Проверено ' + completedSources + ' / ' + targets.length + ' источников…');
 
         if (pendingSources > 0) return;
 
@@ -981,12 +777,13 @@ window.rch_nws[hostkey].Registry = function RchRegistry(client, startConnection)
             if (voice && !item.voice_name) item.voice_name = voice;
 
             var sig = [
+              key,
               item.url || '',
               item.stream || '',
               item.episode || '',
               item.season || '',
-              String(item.voice_name || item.text || '').toLowerCase(),
-              JSON.stringify(normalizedQualityMap(item.quality || item.qualitys || {}))
+              item.voice_name || '',
+              JSON.stringify(item.quality || item.qualitys || {})
             ].join('|');
 
             if (!seen[sig]) {
@@ -1073,7 +870,6 @@ window.rch_nws[hostkey].Registry = function RchRegistry(client, startConnection)
     };
 
     this.find = function() {
-      this.updateBwaToolbar('Проверяем источник…');
       this.request(this.requestParams(source));
     };
     this.request = function(url) {
@@ -1205,15 +1001,7 @@ window.rch_nws[hostkey].Registry = function RchRegistry(client, startConnection)
     };
     this.display = function(videos) {
       var _this5 = this;
-      bwa_all_videos = (videos || []).slice();
-      var visibleVideos = bwa_all_videos.slice();
-      if (bwa_voice_filter) {
-        visibleVideos = visibleVideos.filter(function(item) {
-          return String(item.voice_name || item.text || '').trim().toLowerCase() === bwa_voice_filter.trim().toLowerCase();
-        });
-      }
-      this.current_videos = visibleVideos;
-      this.draw(visibleVideos, {
+      this.draw(videos, {
         onEnter: function onEnter(item, html) {
           _this5.getFileUrl(item, function(json, json_call) {
             if (json && json.url) {
@@ -1302,7 +1090,6 @@ window.rch_nws[hostkey].Registry = function RchRegistry(client, startConnection)
           }, true);
         }
       });
-      this.updateBwaToolbar(bwa_voice_filter ? ('Озвучка: ' + bwa_voice_filter + ' · ' + visibleVideos.length + ' вариантов') : ('Найдено: ' + visibleVideos.length));
       this.filter({
         season: filter_find.season.map(function(s) {
           return s.title;
@@ -1517,7 +1304,6 @@ window.rch_nws[hostkey].Registry = function RchRegistry(client, startConnection)
       scroll.clear();
       scroll.reset();
       scroll.body().append(Lampa.Template.get('lampac_content_loading'));
-      this.createBwaToolbar();
     };
     /**
      * Загрузка
@@ -1693,7 +1479,6 @@ window.rch_nws[hostkey].Registry = function RchRegistry(client, startConnection)
           var qualityLabel = availableQualities.length ? availableQualities.map(function(q) {
             return q + 'p';
           }).join(' · ') : '';
-          var preferredLabel = picked ? picked.quality + 'p' + (preferred > 0 && picked.quality !== preferred ? ' ↓' : '') : '';
 
           Lampa.Arrays.extend(element, {
             voice_name: voice_name,
@@ -1736,17 +1521,6 @@ window.rch_nws[hostkey].Registry = function RchRegistry(client, startConnection)
             return '<span>' + i + '</span>';
           }).join('<span class="online-prestige-split">●</span>');
           var html = Lampa.Template.get('lampac_prestige_full', element);
-          var tags = html.find('.bwa-card__tags');
-          if (tags.length) {
-            var addTag = function(text, kind) {
-              if (!text) return;
-              $('<span class="bwa-card__tag"></span>').addClass(kind ? 'bwa-card__tag--' + kind : '').text(text).appendTo(tags);
-            };
-            if (preferredLabel) addTag(preferredLabel, preferred > 0 && picked && picked.quality !== preferred ? 'fallback' : 'quality');
-            if (element.voice_name || element.text) addTag(element.voice_name || element.text, 'voice');
-            if (element._bwa_source_name && balanser === auto_source_key) addTag(element._bwa_source_name, 'source');
-            if (availableQualities.length > 1) addTag(availableQualities.length + ' качества', 'muted');
-          }
           var loader = html.find('.online-prestige__loader');
           var image = html.find('.online-prestige__img');
 		  if(object.balanser) image.hide();
@@ -2088,8 +1862,6 @@ window.rch_nws[hostkey].Registry = function RchRegistry(client, startConnection)
       html.find('.online-empty__time').text(Lampa.Lang.translate('empty_text'));
       scroll.clear();
       scroll.append(html);
-      this.createBwaToolbar();
-      this.updateBwaToolbar('Нет результатов');
       this.loading(false);
     };
     this.noConnectToServer = function(er) {
@@ -2099,8 +1871,6 @@ window.rch_nws[hostkey].Registry = function RchRegistry(client, startConnection)
       html.find('.online-empty__time').text(er && er.accsdb ? er.msg : Lampa.Lang.translate('lampac_does_not_answer_text').replace('{balanser}', balanser[balanser].name));
       scroll.clear();
       scroll.append(html);
-      this.createBwaToolbar();
-      this.updateBwaToolbar('Не удалось подключиться');
       this.loading(false);
     };
     this.doesNotAnswer = function(er) {
@@ -2121,8 +1891,6 @@ window.rch_nws[hostkey].Registry = function RchRegistry(client, startConnection)
       });
       scroll.clear();
       scroll.append(html);
-      this.createBwaToolbar();
-      this.updateBwaToolbar('Источник не ответил');
       this.loading(false);
       balanser_timer = setInterval(function() {
         tic--;
@@ -2315,9 +2083,9 @@ window.rch_nws[hostkey].Registry = function RchRegistry(client, startConnection)
     window.bwarch_plugin = true;
     var manifst = {
       type: 'video',
-      version: '2.0.0',
+      version: '1.8.0',
       name: 'BwaRC',
-      description: 'BWA online: единый интерфейс источников, озвучек и качества, 1080p по умолчанию',
+      description: 'Адаптивный онлайн-плеер: авто-источники, озвучки и выбор качества 1080p по умолчанию',
       component: 'bwarch',
       onContextMenu: function onContextMenu(object) {
         return {
@@ -2464,11 +2232,11 @@ window.rch_nws[hostkey].Registry = function RchRegistry(client, startConnection)
         zh: '搜索 未返回任何结果'
       }
     });
-    Lampa.Template.add('lampac_css', "\n        <style>\n        @charset 'UTF-8';.online-prestige{position:relative;-webkit-border-radius:.3em;border-radius:.3em;background-color:rgba(0,0,0,0.3);display:-webkit-box;display:-webkit-flex;display:-moz-box;display:-ms-flexbox;display:flex}.online-prestige__body{padding:1.2em;line-height:1.3;-webkit-box-flex:1;-webkit-flex-grow:1;-moz-box-flex:1;-ms-flex-positive:1;flex-grow:1;position:relative}@media screen and (max-width:480px){.online-prestige__body{padding:.8em 1.2em}}.online-prestige__img{position:relative;width:13em;-webkit-flex-shrink:0;-ms-flex-negative:0;flex-shrink:0;min-height:8.2em}.online-prestige__img>img{position:absolute;top:0;left:0;width:100%;height:100%;-o-object-fit:cover;object-fit:cover;-webkit-border-radius:.3em;border-radius:.3em;opacity:0;-webkit-transition:opacity .3s;-o-transition:opacity .3s;-moz-transition:opacity .3s;transition:opacity .3s}.online-prestige__img--loaded>img{opacity:1}@media screen and (max-width:480px){.online-prestige__img{width:7em;min-height:6em}}.online-prestige__folder{padding:1em;-webkit-flex-shrink:0;-ms-flex-negative:0;flex-shrink:0}.online-prestige__folder>svg{width:4.4em !important;height:4.4em !important}.online-prestige__viewed{position:absolute;top:1em;left:1em;background:rgba(0,0,0,0.45);-webkit-border-radius:100%;border-radius:100%;padding:.25em;font-size:.76em}.online-prestige__viewed>svg{width:1.5em !important;height:1.5em !important}.online-prestige__episode-number{position:absolute;top:0;left:0;right:0;bottom:0;display:-webkit-box;display:-webkit-flex;display:-moz-box;display:-ms-flexbox;display:flex;-webkit-box-align:center;-webkit-align-items:center;-moz-box-align:center;-ms-flex-align:center;align-items:center;-webkit-box-pack:center;-webkit-justify-content:center;-moz-box-pack:center;-ms-flex-pack:center;justify-content:center;font-size:2em}.online-prestige__loader{position:absolute;top:50%;left:50%;width:2em;height:2em;margin-left:-1em;margin-top:-1em;background:url(./img/loader.svg) no-repeat center center;-webkit-background-size:contain;-o-background-size:contain;background-size:contain}.online-prestige__head,.online-prestige__footer{display:-webkit-box;display:-webkit-flex;display:-moz-box;display:-ms-flexbox;display:flex;-webkit-box-pack:justify;-webkit-justify-content:space-between;-moz-box-pack:justify;-ms-flex-pack:justify;justify-content:space-between;-webkit-box-align:center;-webkit-align-items:center;-moz-box-align:center;-ms-flex-align:center;align-items:center}.online-prestige__timeline{margin:.8em 0}.online-prestige__timeline>.time-line{display:block !important}.online-prestige__title{font-size:1.7em;overflow:hidden;-o-text-overflow:ellipsis;text-overflow:ellipsis;display:-webkit-box;-webkit-line-clamp:1;line-clamp:1;-webkit-box-orient:vertical}@media screen and (max-width:480px){.online-prestige__title{font-size:1.4em}}.online-prestige__time{padding-left:2em}.online-prestige__info{display:-webkit-box;display:-webkit-flex;display:-moz-box;display:-ms-flexbox;display:flex;-webkit-box-align:center;-webkit-align-items:center;-moz-box-align:center;-ms-flex-align:center;align-items:center}.online-prestige__info>*{overflow:hidden;-o-text-overflow:ellipsis;text-overflow:ellipsis;display:-webkit-box;-webkit-line-clamp:1;line-clamp:1;-webkit-box-orient:vertical}.online-prestige__quality{padding-left:1em;white-space:nowrap}.online-prestige__scan-file{position:absolute;bottom:0;left:0;right:0}.online-prestige__scan-file .broadcast__scan{margin:0}.online-prestige .online-prestige-split{font-size:.8em;margin:0 1em;-webkit-flex-shrink:0;-ms-flex-negative:0;flex-shrink:0}.online-prestige.focus::after{content:'';position:absolute;top:-0.6em;left:-0.6em;right:-0.6em;bottom:-0.6em;-webkit-border-radius:.7em;border-radius:.7em;border:solid .3em #fff;z-index:-1;pointer-events:none}.online-prestige+.online-prestige{margin-top:1.5em}.online-prestige--folder .online-prestige__footer{margin-top:.8em}.online-prestige-watched{padding:1em}.online-prestige-watched__icon>svg{width:1.5em;height:1.5em}.online-prestige-watched__body{padding-left:1em;padding-top:.1em;display:-webkit-box;display:-webkit-flex;display:-moz-box;display:-ms-flexbox;display:flex;-webkit-flex-wrap:wrap;-ms-flex-wrap:wrap;flex-wrap:wrap}.online-prestige-watched__body>span+span::before{content:' ● ';vertical-align:top;display:inline-block;margin:0 .5em}.online-prestige-rate{display:-webkit-inline-box;display:-webkit-inline-flex;display:-moz-inline-box;display:-ms-inline-flexbox;display:inline-flex;-webkit-box-align:center;-webkit-align-items:center;-moz-box-align:center;-ms-flex-align:center;align-items:center}.online-prestige-rate>svg{width:1.3em !important;height:1.3em !important}.online-prestige-rate>span{font-weight:600;font-size:1.1em;padding-left:.7em}.online-empty{line-height:1.4}.online-empty__title{font-size:1.8em;margin-bottom:.3em}.online-empty__time{font-size:1.2em;font-weight:300;margin-bottom:1.6em}.online-empty__buttons{display:-webkit-box;display:-webkit-flex;display:-moz-box;display:-ms-flexbox;display:flex}.online-empty__buttons>*+*{margin-left:1em}.online-empty__button{background:rgba(0,0,0,0.3);font-size:1.2em;padding:.5em 1.2em;-webkit-border-radius:.2em;border-radius:.2em;margin-bottom:2.4em}.online-empty__button.focus{background:#fff;color:black}.online-empty__templates .online-empty-template:nth-child(2){opacity:.5}.online-empty__templates .online-empty-template:nth-child(3){opacity:.2}.online-empty-template{background-color:rgba(255,255,255,0.3);padding:1em;display:-webkit-box;display:-webkit-flex;display:-moz-box;display:-ms-flexbox;display:flex;-webkit-box-align:center;-webkit-align-items:center;-moz-box-align:center;-ms-flex-align:center;align-items:center;-webkit-border-radius:.3em;border-radius:.3em}.online-empty-template>*{background:rgba(0,0,0,0.3);-webkit-border-radius:.3em;border-radius:.3em}.online-empty-template__ico{width:4em;height:4em;margin-right:2.4em}.online-empty-template__body{height:1.7em;width:70%}.online-empty-template+.online-empty-template{margin-top:1em}\n        .online-prestige__quality{font-weight:600;opacity:.95;max-width:42%;overflow:hidden;text-overflow:ellipsis}.online-prestige__body{min-width:0}.online-prestige__info{min-width:0}.online-prestige__info>*{min-width:0}@media screen and (max-width:900px){.online-prestige__quality{max-width:38%;font-size:.92em}}@media screen and (max-width:480px){.online-prestige{min-height:6em}.online-prestige__body{padding:.75em .9em}.online-prestige__title{font-size:1.15em}.online-prestige__info{font-size:.88em}.online-prestige__quality{font-size:.84em;max-width:45%}.online-prestige__timeline{margin:.45em 0}}\n.bwa-ui{margin:0 0 1.1em;padding:1em 1.1em;background:linear-gradient(135deg,rgba(255,255,255,.10),rgba(255,255,255,.045));border:1px solid rgba(255,255,255,.10);border-radius:.65em;backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px)}.bwa-ui__top{display:flex;align-items:center;justify-content:space-between;gap:1em;margin-bottom:.8em}.bwa-ui__identity{display:flex;align-items:center;gap:.75em;min-width:0}.bwa-ui__logo{width:2.25em;height:2.25em;border-radius:.6em;display:flex;align-items:center;justify-content:center;background:rgba(255,255,255,.11);font-size:1.05em;flex-shrink:0}.bwa-ui__titles{min-width:0}.bwa-ui__title{font-size:1.15em;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.bwa-ui__status{font-size:.82em;opacity:.60;margin-top:.15em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.bwa-ui__count{font-size:.82em;opacity:.65;white-space:nowrap}.bwa-ui__controls{display:flex;gap:.55em;flex-wrap:wrap}.bwa-ui__button{display:flex;align-items:center;gap:.45em;min-height:2.7em;padding:.55em .8em;background:rgba(0,0,0,.20);border:1px solid rgba(255,255,255,.08);border-radius:.45em;max-width:100%;transition:background .15s,transform .15s}.bwa-ui__button.focus{background:#fff;color:#111;transform:translateY(-1px)}.bwa-ui__icon{opacity:.8;font-size:.82em;min-width:1.5em;text-align:center}.bwa-ui__label{opacity:.65}.bwa-ui__button strong{font-weight:600;max-width:20em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.bwa-ui__hint{font-size:.78em;opacity:.42;margin-top:.7em}.bwa-ui__reset-voice{color:#ffb8b8}.bwa-ui__reset-voice.hide{display:none}.bwa-card__tags{display:flex;align-items:center;gap:.45em;flex-wrap:wrap;margin:.65em 0 .1em;min-height:0}.bwa-card__tag{display:inline-flex;align-items:center;padding:.25em .55em;background:rgba(255,255,255,.10);border-radius:.35em;font-size:.78em;line-height:1.2;white-space:nowrap;max-width:17em;overflow:hidden;text-overflow:ellipsis}.bwa-card__tag--quality{background:rgba(255,255,255,.18);font-weight:700}.bwa-card__tag--fallback{background:rgba(255,185,80,.18)}.bwa-card__tag--voice{background:rgba(255,255,255,.08)}.bwa-card__tag--source{background:rgba(255,255,255,.065);opacity:.76}.bwa-card__tag--muted{opacity:.5}@media screen and (max-width:700px){.bwa-ui{padding:.75em}.bwa-ui__label{display:none}.bwa-ui__button{padding:.55em .65em}.bwa-ui__button strong{max-width:12em}.bwa-card__tag{font-size:.72em;max-width:12em}}@media screen and (max-width:480px){.bwa-ui{margin-bottom:.75em}.bwa-ui__top{margin-bottom:.6em}.bwa-ui__logo{width:2em;height:2em}.bwa-ui__title{font-size:1em}.bwa-ui__status{font-size:.72em}.bwa-ui__hint{display:none}.bwa-ui__button{min-height:2.35em}.bwa-card__tags{gap:.3em;margin-top:.45em}.bwa-card__tag{padding:.22em .45em}.bwa-card__tag--source,.bwa-card__tag--muted{display:none}}\n        </style>\n    ");
+    Lampa.Template.add('lampac_css', "\n        <style>\n        @charset 'UTF-8';.online-prestige{position:relative;-webkit-border-radius:.3em;border-radius:.3em;background-color:rgba(0,0,0,0.3);display:-webkit-box;display:-webkit-flex;display:-moz-box;display:-ms-flexbox;display:flex}.online-prestige__body{padding:1.2em;line-height:1.3;-webkit-box-flex:1;-webkit-flex-grow:1;-moz-box-flex:1;-ms-flex-positive:1;flex-grow:1;position:relative}@media screen and (max-width:480px){.online-prestige__body{padding:.8em 1.2em}}.online-prestige__img{position:relative;width:13em;-webkit-flex-shrink:0;-ms-flex-negative:0;flex-shrink:0;min-height:8.2em}.online-prestige__img>img{position:absolute;top:0;left:0;width:100%;height:100%;-o-object-fit:cover;object-fit:cover;-webkit-border-radius:.3em;border-radius:.3em;opacity:0;-webkit-transition:opacity .3s;-o-transition:opacity .3s;-moz-transition:opacity .3s;transition:opacity .3s}.online-prestige__img--loaded>img{opacity:1}@media screen and (max-width:480px){.online-prestige__img{width:7em;min-height:6em}}.online-prestige__folder{padding:1em;-webkit-flex-shrink:0;-ms-flex-negative:0;flex-shrink:0}.online-prestige__folder>svg{width:4.4em !important;height:4.4em !important}.online-prestige__viewed{position:absolute;top:1em;left:1em;background:rgba(0,0,0,0.45);-webkit-border-radius:100%;border-radius:100%;padding:.25em;font-size:.76em}.online-prestige__viewed>svg{width:1.5em !important;height:1.5em !important}.online-prestige__episode-number{position:absolute;top:0;left:0;right:0;bottom:0;display:-webkit-box;display:-webkit-flex;display:-moz-box;display:-ms-flexbox;display:flex;-webkit-box-align:center;-webkit-align-items:center;-moz-box-align:center;-ms-flex-align:center;align-items:center;-webkit-box-pack:center;-webkit-justify-content:center;-moz-box-pack:center;-ms-flex-pack:center;justify-content:center;font-size:2em}.online-prestige__loader{position:absolute;top:50%;left:50%;width:2em;height:2em;margin-left:-1em;margin-top:-1em;background:url(./img/loader.svg) no-repeat center center;-webkit-background-size:contain;-o-background-size:contain;background-size:contain}.online-prestige__head,.online-prestige__footer{display:-webkit-box;display:-webkit-flex;display:-moz-box;display:-ms-flexbox;display:flex;-webkit-box-pack:justify;-webkit-justify-content:space-between;-moz-box-pack:justify;-ms-flex-pack:justify;justify-content:space-between;-webkit-box-align:center;-webkit-align-items:center;-moz-box-align:center;-ms-flex-align:center;align-items:center}.online-prestige__timeline{margin:.8em 0}.online-prestige__timeline>.time-line{display:block !important}.online-prestige__title{font-size:1.7em;overflow:hidden;-o-text-overflow:ellipsis;text-overflow:ellipsis;display:-webkit-box;-webkit-line-clamp:1;line-clamp:1;-webkit-box-orient:vertical}@media screen and (max-width:480px){.online-prestige__title{font-size:1.4em}}.online-prestige__time{padding-left:2em}.online-prestige__info{display:-webkit-box;display:-webkit-flex;display:-moz-box;display:-ms-flexbox;display:flex;-webkit-box-align:center;-webkit-align-items:center;-moz-box-align:center;-ms-flex-align:center;align-items:center}.online-prestige__info>*{overflow:hidden;-o-text-overflow:ellipsis;text-overflow:ellipsis;display:-webkit-box;-webkit-line-clamp:1;line-clamp:1;-webkit-box-orient:vertical}.online-prestige__quality{padding-left:1em;white-space:nowrap}.online-prestige__scan-file{position:absolute;bottom:0;left:0;right:0}.online-prestige__scan-file .broadcast__scan{margin:0}.online-prestige .online-prestige-split{font-size:.8em;margin:0 1em;-webkit-flex-shrink:0;-ms-flex-negative:0;flex-shrink:0}.online-prestige.focus::after{content:'';position:absolute;top:-0.6em;left:-0.6em;right:-0.6em;bottom:-0.6em;-webkit-border-radius:.7em;border-radius:.7em;border:solid .3em #fff;z-index:-1;pointer-events:none}.online-prestige+.online-prestige{margin-top:1.5em}.online-prestige--folder .online-prestige__footer{margin-top:.8em}.online-prestige-watched{padding:1em}.online-prestige-watched__icon>svg{width:1.5em;height:1.5em}.online-prestige-watched__body{padding-left:1em;padding-top:.1em;display:-webkit-box;display:-webkit-flex;display:-moz-box;display:-ms-flexbox;display:flex;-webkit-flex-wrap:wrap;-ms-flex-wrap:wrap;flex-wrap:wrap}.online-prestige-watched__body>span+span::before{content:' ● ';vertical-align:top;display:inline-block;margin:0 .5em}.online-prestige-rate{display:-webkit-inline-box;display:-webkit-inline-flex;display:-moz-inline-box;display:-ms-inline-flexbox;display:inline-flex;-webkit-box-align:center;-webkit-align-items:center;-moz-box-align:center;-ms-flex-align:center;align-items:center}.online-prestige-rate>svg{width:1.3em !important;height:1.3em !important}.online-prestige-rate>span{font-weight:600;font-size:1.1em;padding-left:.7em}.online-empty{line-height:1.4}.online-empty__title{font-size:1.8em;margin-bottom:.3em}.online-empty__time{font-size:1.2em;font-weight:300;margin-bottom:1.6em}.online-empty__buttons{display:-webkit-box;display:-webkit-flex;display:-moz-box;display:-ms-flexbox;display:flex}.online-empty__buttons>*+*{margin-left:1em}.online-empty__button{background:rgba(0,0,0,0.3);font-size:1.2em;padding:.5em 1.2em;-webkit-border-radius:.2em;border-radius:.2em;margin-bottom:2.4em}.online-empty__button.focus{background:#fff;color:black}.online-empty__templates .online-empty-template:nth-child(2){opacity:.5}.online-empty__templates .online-empty-template:nth-child(3){opacity:.2}.online-empty-template{background-color:rgba(255,255,255,0.3);padding:1em;display:-webkit-box;display:-webkit-flex;display:-moz-box;display:-ms-flexbox;display:flex;-webkit-box-align:center;-webkit-align-items:center;-moz-box-align:center;-ms-flex-align:center;align-items:center;-webkit-border-radius:.3em;border-radius:.3em}.online-empty-template>*{background:rgba(0,0,0,0.3);-webkit-border-radius:.3em;border-radius:.3em}.online-empty-template__ico{width:4em;height:4em;margin-right:2.4em}.online-empty-template__body{height:1.7em;width:70%}.online-empty-template+.online-empty-template{margin-top:1em}\n        .online-prestige__quality{font-weight:600;opacity:.95;max-width:42%;overflow:hidden;text-overflow:ellipsis}.online-prestige__body{min-width:0}.online-prestige__info{min-width:0}.online-prestige__info>*{min-width:0}@media screen and (max-width:900px){.online-prestige__quality{max-width:38%;font-size:.92em}}@media screen and (max-width:480px){.online-prestige{min-height:6em}.online-prestige__body{padding:.75em .9em}.online-prestige__title{font-size:1.15em}.online-prestige__info{font-size:.88em}.online-prestige__quality{font-size:.84em;max-width:45%}.online-prestige__timeline{margin:.45em 0}}\n        </style>\n    ");
     $('body').append(Lampa.Template.get('lampac_css', {}, true));
 
     function resetTemplates() {
-      Lampa.Template.add('lampac_prestige_full', "<div class=\"online-prestige online-prestige--full selector\">\n            <div class=\"online-prestige__img\">\n                <img alt=\"\">\n                <div class=\"online-prestige__loader\"></div>\n            </div>\n            <div class=\"online-prestige__body\">\n                <div class=\"online-prestige__head\">\n                    <div class=\"online-prestige__title\">{title}</div>\n                    <div class=\"online-prestige__time\">{time}</div>\n                </div>\n                <div class=\"bwa-card__tags\"></div>\n\n                <div class=\"online-prestige__timeline\"></div>\n\n                <div class=\"online-prestige__footer\">\n                    <div class=\"online-prestige__info\">{info}</div>\n                    <div class=\"online-prestige__quality\">{quality}</div>\n                </div>\n            </div>\n        </div>");
+      Lampa.Template.add('lampac_prestige_full', "<div class=\"online-prestige online-prestige--full selector\">\n            <div class=\"online-prestige__img\">\n                <img alt=\"\">\n                <div class=\"online-prestige__loader\"></div>\n            </div>\n            <div class=\"online-prestige__body\">\n                <div class=\"online-prestige__head\">\n                    <div class=\"online-prestige__title\">{title}</div>\n                    <div class=\"online-prestige__time\">{time}</div>\n                </div>\n\n                <div class=\"online-prestige__timeline\"></div>\n\n                <div class=\"online-prestige__footer\">\n                    <div class=\"online-prestige__info\">{info}</div>\n                    <div class=\"online-prestige__quality\">{quality}</div>\n                </div>\n            </div>\n        </div>");
       Lampa.Template.add('lampac_content_loading', "<div class=\"online-empty\">\n            <div class=\"broadcast__scan\"><div></div></div>\n\t\t\t\n            <div class=\"online-empty__templates\">\n                <div class=\"online-empty-template selector\">\n                    <div class=\"online-empty-template__ico\"></div>\n                    <div class=\"online-empty-template__body\"></div>\n                </div>\n                <div class=\"online-empty-template\">\n                    <div class=\"online-empty-template__ico\"></div>\n                    <div class=\"online-empty-template__body\"></div>\n                </div>\n                <div class=\"online-empty-template\">\n                    <div class=\"online-empty-template__ico\"></div>\n                    <div class=\"online-empty-template__body\"></div>\n                </div>\n            </div>\n        </div>");
       Lampa.Template.add('lampac_does_not_answer', "<div class=\"online-empty\">\n            <div class=\"online-empty__title\">\n                #{lampac_balanser_dont_work}\n            </div>\n            <div class=\"online-empty__time\">\n                #{lampac_balanser_timeout}\n            </div>\n            <div class=\"online-empty__buttons\">\n                <div class=\"online-empty__button selector cancel\">#{cancel}</div>\n                <div class=\"online-empty__button selector change\">#{lampac_change_balanser}</div>\n            </div>\n            <div class=\"online-empty__templates\">\n                <div class=\"online-empty-template\">\n                    <div class=\"online-empty-template__ico\"></div>\n                    <div class=\"online-empty-template__body\"></div>\n                </div>\n                <div class=\"online-empty-template\">\n                    <div class=\"online-empty-template__ico\"></div>\n                    <div class=\"online-empty-template__body\"></div>\n                </div>\n                <div class=\"online-empty-template\">\n                    <div class=\"online-empty-template__ico\"></div>\n                    <div class=\"online-empty-template__body\"></div>\n                </div>\n            </div>\n        </div>");
       Lampa.Template.add('lampac_prestige_rate', "<div class=\"online-prestige-rate\">\n            <svg width=\"17\" height=\"16\" viewBox=\"0 0 17 16\" fill=\"none\" xmlns=\"http://www.w3.org/2000/svg\">\n                <path d=\"M8.39409 0.192139L10.99 5.30994L16.7882 6.20387L12.5475 10.4277L13.5819 15.9311L8.39409 13.2425L3.20626 15.9311L4.24065 10.4277L0 6.20387L5.79819 5.30994L8.39409 0.192139Z\" fill=\"#fff\"></path>\n            </svg>\n            <span>{rate}</span>\n        </div>");
