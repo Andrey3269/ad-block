@@ -1,117 +1,130 @@
 (function () {
   'use strict';
 
-  // Unified Lampa installer:
-  // - loads the z01.online balanceer stack (online.js + lampac-src-filter.js)
-  // - removes trailers, shots, and torrents
-  // - does not touch Lampa's native "Watch" button
-  // - guards against duplicate initialization
-
   if (window.lampa_z01_unified_v1) return;
   window.lampa_z01_unified_v1 = true;
 
-  var VERSION = '1.0.1';
+  var VERSION = '1.1.1';
   var HOST = 'http://z01.online/';
 
-  function removeUnwantedUI(root) {
-    try {
-      var scope = root && root.querySelectorAll ? root : document;
-      var selectors = [
-        '.view--trailer',
-        '[data-action="trailer"]',
-        '.shots-view-button',
-        '.view--shots',
-        '.view--torrent',          // Добавлено скрытие кнопки торрента
-        '[data-action="torrent"]'  // Добавлено скрытие кнопки торрента
-      ];
-
-      selectors.forEach(function (selector) {
-        try {
-          $(scope).find(selector).remove();
-        } catch (e) {}
-      });
-
-      try {
-        $('.shots-view-button, .view--shots, .view--trailer, .view--torrent, [data-action="torrent"]').remove();
-      } catch (e) {}
-    } catch (e) {}
+  // Вспомогательная функция из вашего старого кода для безопасного выполнения
+  function safe(fn) {
+    try { return fn(); } catch (e) { return null; }
   }
 
-  function disableTorrentSetting() {
-    // Заменили несуществующий safe() на стандартный try...catch
-    try {
-      if (window.lampa_settings) {
-        window.lampa_settings.torrents_use = false;
+  // 1. Блокируем отображение через CSS (расширенный список селекторов)
+  function injectCSS() {
+    if (document.getElementById('lampa_z01_hide_css')) return;
+    var style = document.createElement('style');
+    style.id = 'lampa_z01_hide_css';
+    style.innerHTML = `
+      .view--trailer, [data-action="trailer"],
+      .shots-view-button, .view--shots, .shots-view, [data-action="shots"], [data-action="shorts"],
+      .view--torrent, .view--torrents, .torrent-view, .torrent-view-button, .torrent-button,
+      [data-action="torrent"], [data-action="torrents"], [data-type="torrent"], [data-type="torrents"],
+      .button--torrent,
+      .full-start__button[data-subtitle*="торрент"], .full-start__button[data-subtitle*="Torrent"] {
+        display: none !important;
       }
-    } catch (e) {}
+    `;
+    document.head.appendChild(style);
+  }
 
-    try {
+  // 2. Физически удаляем кнопки из кода (взято из вашего старого скрипта)
+  function removeUnwantedUI(root) {
+    var scope = root || document;
+
+    var selectors = [
+      '.view--trailer', '[data-action="trailer"]',
+      '.shots-view-button', '.view--shots', '.shots-view', '[data-action="shots"]', '[data-action="shorts"]',
+      '.view--torrent', '.view--torrents', '.torrent-view', '.torrent-view-button', '.torrent-button',
+      '[data-action="torrent"]', '[data-action="torrents"]', '[data-type="torrent"]', '[data-type="torrents"]',
+      '.button--torrent',
+      '.full-start__button[data-subtitle*="торрент"]', '.full-start__button[data-subtitle*="Torrent"]'
+    ];
+
+    // Удаление по классам и атрибутам
+    safe(function() {
+      selectors.forEach(function (selector) {
+         var nodes = scope.querySelectorAll(selector);
+         for (var i = 0; i < nodes.length; i++) {
+             nodes[i].remove();
+         }
+      });
+    });
+
+    // Умное удаление по тексту (на случай если классы нестандартные)
+    safe(function () {
+      var buttons = scope.querySelectorAll('.full-start__button, .selector');
+      for (var i = 0; i < buttons.length; i++) {
+        var text = (buttons[i].textContent || '').replace(/\s+/g, ' ').trim().toLowerCase();
+        if (text === 'торренты' || text === 'torrents' || text === 'torrent') {
+          buttons[i].remove();
+        }
+      }
+    });
+  }
+
+  // 3. Отключаем торренты в настройках самой Лампы
+  function disableTorrentSetting() {
+    safe(function () {
+      if (window.lampa_settings) window.lampa_settings.torrents_use = false;
+    });
+    safe(function () {
       if (window.Lampa && window.Lampa.SettingsApi && typeof window.Lampa.SettingsApi.addParam === 'function') {
         if (window.lampa_settings) window.lampa_settings.torrents_use = false;
       }
-    } catch (e) {}
+    });
   }
 
+  // 4. Следим за интерфейсом и чистим его при перерисовке
   function installUiCleaner() {
     if (window.lampa_z01_unified_ui_cleaner) return;
     window.lampa_z01_unified_ui_cleaner = true;
 
-    if (window.Lampa && window.Lampa.Listener) {
-      Lampa.Listener.follow('full', function (e) {
-        if (e.type === 'complite' || e.type === 'complete') {
-          setTimeout(function () {
-            removeUnwantedUI(e.object && e.object.activity ? e.object.activity.render() : document);
-          }, 0);
-          setTimeout(function () {
-            removeUnwantedUI(document);
-          }, 150);
+    safe(function() {
+        if (window.Lampa && window.Lampa.Listener) {
+          Lampa.Listener.follow('full', function (e) {
+            if (e.type === 'complite' || e.type === 'complete') {
+              setTimeout(function () {
+                removeUnwantedUI(e.object && e.object.activity ? e.object.activity.render() : document);
+              }, 50);
+            }
+          });
         }
-      });
-    }
+    });
 
     if (window.MutationObserver && !window.lampa_z01_unified_observer) {
       window.lampa_z01_unified_observer = new MutationObserver(function () {
         removeUnwantedUI(document);
       });
-
-      try {
-        window.lampa_z01_unified_observer.observe(document.documentElement, {
-          childList: true,
-          subtree: true
-        });
-      } catch (e) {}
+      safe(function() {
+        window.lampa_z01_unified_observer.observe(document.documentElement, { childList: true, subtree: true });
+      });
     }
-
-    removeUnwantedUI(document);
   }
 
+  // 5. Загружаем основной балансер
   function loadZ01() {
     if (window.lampa_z01_unified_loaded) return;
     window.lampa_z01_unified_loaded = true;
 
-    var scripts = [
-      HOST + 'online.js',
-      HOST + 'lampac-src-filter.js'
-    ];
+    var scripts = [HOST + 'online.js', HOST + 'lampac-src-filter.js'];
 
     if (window.Lampa && window.Lampa.Utils && typeof window.Lampa.Utils.putScriptAsync === 'function') {
-      try {
-        Lampa.Utils.putScriptAsync(scripts, function () {
-          removeUnwantedUI(document);
-          window.lampa_z01_unified_ready = true;
-        });
-        return;
-      } catch (e) {}
+      var res = safe(function () {
+        Lampa.Utils.putScriptAsync(scripts, function () { window.lampa_z01_unified_ready = true; });
+        return true;
+      });
+      if (res) return;
     }
 
     var index = 0;
     function next() {
       if (index >= scripts.length) {
         window.lampa_z01_unified_ready = true;
-        removeUnwantedUI(document);
         return;
       }
-
       var script = document.createElement('script');
       script.async = true;
       script.src = scripts[index++];
@@ -119,29 +132,26 @@
       script.onerror = next;
       (document.head || document.documentElement).appendChild(script);
     }
-
     next();
   }
 
+  // Запуск
   function start() {
+    injectCSS();
     installUiCleaner();
     loadZ01();
-    disableTorrentSetting(); // Исправление: теперь функция вызывается при старте
-
-    setTimeout(function () {
-      removeUnwantedUI(document);
-    }, 800);
-
-    setTimeout(function () {
-      removeUnwantedUI(document);
-    }, 2000);
+    disableTorrentSetting();
   }
 
   if (window.appready) {
     start();
-  } else if (window.Lampa && window.Lampa.Listener) {
-    Lampa.Listener.follow('app', function (event) {
-      if (event.type === 'ready') start();
+  } else {
+    safe(function() {
+        if (window.Lampa && window.Lampa.Listener) {
+          Lampa.Listener.follow('app', function (event) {
+            if (event.type === 'ready') start();
+          });
+        }
     });
   }
 
