@@ -37,6 +37,22 @@
     } catch (e) {}
   }
 
+  function disableTorrentSetting() {
+    safe(function () {
+      if (window.lampa_settings) {
+        window.lampa_settings.torrents_use = false;
+      }
+    });
+
+    // Some Lampa builds expose SettingsApi instead of only lampa_settings.
+    safe(function () {
+      if (Lampa.SettingsApi && typeof Lampa.SettingsApi.addParam === 'function') {
+        // Do not create a new user-facing toggle; force the intended unified UI.
+        if (window.lampa_settings) window.lampa_settings.torrents_use = false;
+      }
+    });
+  }
+
   function installUiCleaner() {
     if (window.lampa_z01_unified_ui_cleaner) return;
     window.lampa_z01_unified_ui_cleaner = true;
