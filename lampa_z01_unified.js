@@ -3,15 +3,14 @@
 
   // Unified Lampa installer:
   // - loads the z01.online balanceer stack (online.js + lampac-src-filter.js)
-  // - removes trailers
-  // - removes Shots/Shorts button
+  // - removes trailers, shots, and torrents
   // - does not touch Lampa's native "Watch" button
   // - guards against duplicate initialization
 
   if (window.lampa_z01_unified_v1) return;
   window.lampa_z01_unified_v1 = true;
 
-  var VERSION = '1.0.0';
+  var VERSION = '1.0.1';
   var HOST = 'http://z01.online/';
 
   function removeUnwantedUI(root) {
@@ -21,7 +20,9 @@
         '.view--trailer',
         '[data-action="trailer"]',
         '.shots-view-button',
-        '.view--shots'
+        '.view--shots',
+        '.view--torrent',          // Добавлено скрытие кнопки торрента
+        '[data-action="torrent"]'  // Добавлено скрытие кнопки торрента
       ];
 
       selectors.forEach(function (selector) {
@@ -30,46 +31,44 @@
         } catch (e) {}
       });
 
-      // Some Lampa builds render the button dynamically or use extra wrappers.
       try {
-        $('.shots-view-button, .view--shots, .view--trailer').remove();
+        $('.shots-view-button, .view--shots, .view--trailer, .view--torrent, [data-action="torrent"]').remove();
       } catch (e) {}
     } catch (e) {}
   }
 
   function disableTorrentSetting() {
-    safe(function () {
+    // Заменили несуществующий safe() на стандартный try...catch
+    try {
       if (window.lampa_settings) {
         window.lampa_settings.torrents_use = false;
       }
-    });
+    } catch (e) {}
 
-    // Some Lampa builds expose SettingsApi instead of only lampa_settings.
-    safe(function () {
-      if (Lampa.SettingsApi && typeof Lampa.SettingsApi.addParam === 'function') {
-        // Do not create a new user-facing toggle; force the intended unified UI.
+    try {
+      if (window.Lampa && window.Lampa.SettingsApi && typeof window.Lampa.SettingsApi.addParam === 'function') {
         if (window.lampa_settings) window.lampa_settings.torrents_use = false;
       }
-    });
+    } catch (e) {}
   }
 
   function installUiCleaner() {
     if (window.lampa_z01_unified_ui_cleaner) return;
     window.lampa_z01_unified_ui_cleaner = true;
 
-    // Clean every full-card render so async buttons cannot come back.
-    Lampa.Listener.follow('full', function (e) {
-      if (e.type === 'complite' || e.type === 'complete') {
-        setTimeout(function () {
-          removeUnwantedUI(e.object && e.object.activity ? e.object.activity.render() : document);
-        }, 0);
-        setTimeout(function () {
-          removeUnwantedUI(document);
-        }, 150);
-      }
-    });
+    if (window.Lampa && window.Lampa.Listener) {
+      Lampa.Listener.follow('full', function (e) {
+        if (e.type === 'complite' || e.type === 'complete') {
+          setTimeout(function () {
+            removeUnwantedUI(e.object && e.object.activity ? e.object.activity.render() : document);
+          }, 0);
+          setTimeout(function () {
+            removeUnwantedUI(document);
+          }, 150);
+        }
+      });
+    }
 
-    // Also clean the DOM when a build creates Shots/Trailer controls later.
     if (window.MutationObserver && !window.lampa_z01_unified_observer) {
       window.lampa_z01_unified_observer = new MutationObserver(function () {
         removeUnwantedUI(document);
@@ -83,7 +82,6 @@
       } catch (e) {}
     }
 
-    // Initial pass.
     removeUnwantedUI(document);
   }
 
@@ -96,8 +94,7 @@
       HOST + 'lampac-src-filter.js'
     ];
 
-    // Preferred Lampa loader used by z01's own entrypoint.
-    if (Lampa.Utils && typeof Lampa.Utils.putScriptAsync === 'function') {
+    if (window.Lampa && window.Lampa.Utils && typeof window.Lampa.Utils.putScriptAsync === 'function') {
       try {
         Lampa.Utils.putScriptAsync(scripts, function () {
           removeUnwantedUI(document);
@@ -107,7 +104,6 @@
       } catch (e) {}
     }
 
-    // Fallback for older Lampa builds without putScriptAsync.
     var index = 0;
     function next() {
       if (index >= scripts.length) {
@@ -130,8 +126,8 @@
   function start() {
     installUiCleaner();
     loadZ01();
+    disableTorrentSetting(); // Исправление: теперь функция вызывается при старте
 
-    // One more cleanup after external plugins have initialized.
     setTimeout(function () {
       removeUnwantedUI(document);
     }, 800);
@@ -143,18 +139,18 @@
 
   if (window.appready) {
     start();
-  } else {
+  } else if (window.Lampa && window.Lampa.Listener) {
     Lampa.Listener.follow('app', function (event) {
       if (event.type === 'ready') start();
     });
   }
 
-  // Informational marker for debugging in Lampa console.
   window.lampa_z01_unified = {
     version: VERSION,
     online: HOST + 'online.js',
     sourceFilter: HOST + 'lampac-src-filter.js',
     trailers: false,
-    shots: false
+    shots: false,
+    torrents: false
   };
 })();
